@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MB Calculator</title>
+  <style>
+    :root {
+      --bg: #f6f1e8;
+      --panel: #fffaf0;
+      --ink: #1f2a24;
+      --muted: #66756b;
+      --accent: #b95c32;
+      --accent-dark: #7f3416;
+      --line: #dcccb9;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, #f4dfc6 0, transparent 30%),
+        linear-gradient(135deg, #f8efe3 0%, var(--bg) 55%, #ede4d4 100%);
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+
+    .card {
+      width: min(680px, 100%);
+      background: color-mix(in srgb, var(--panel) 92%, white);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      padding: 32px;
+      box-shadow: 0 24px 70px rgba(76, 48, 22, 0.12);
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: clamp(2rem, 6vw, 3.4rem);
+      line-height: 0.95;
+      letter-spacing: -0.04em;
+    }
+
+    p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1.6;
+    }
+
+    form {
+      margin-top: 28px;
+      display: grid;
+      gap: 16px;
+    }
+
+    .dropzone {
+      border: 1.5px dashed var(--line);
+      border-radius: 18px;
+      padding: 28px;
+      background: rgba(255, 255, 255, 0.6);
+    }
+
+    input[type="file"] {
+      width: 100%;
+      font-size: 1rem;
+      color: var(--ink);
+    }
+
+    button {
+      border: 0;
+      border-radius: 999px;
+      padding: 14px 22px;
+      background: linear-gradient(135deg, var(--accent) 0%, #cf7b48 100%);
+      color: white;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      justify-self: start;
+      box-shadow: 0 16px 30px rgba(185, 92, 50, 0.2);
+    }
+
+    .flash {
+      margin-top: 18px;
+      padding: 14px 16px;
+      border-radius: 14px;
+      background: #fff0eb;
+      border: 1px solid #efc2b3;
+      color: #8c2f0b;
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>MB Calculator</h1>
+    <p>Upload the workbook and download a reduced output workbook that keeps only the required input and final output columns.</p>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        {% for message in messages %}
+          <div class="flash">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <form method="post" action="{{ url_for('process_file') }}" enctype="multipart/form-data">
+      <label class="dropzone">
+        <input type="file" name="file" accept=".xlsx,.xlsm" required>
+      </label>
+      <button type="submit">Generate Output Excel</button>
+    </form>
+  </main>
+</body>
+</html>
