@@ -1,12 +1,12 @@
 # MB Calculator
 
-This project exposes the workbook `MB_Calc2_Apr 2026_auto.xlsx` through a small Flask web app.
+This project exposes a Python-only MB calculator through a small Flask web app.
 
 Workflow:
 
 1. Upload an Excel workbook that contains a single input sheet with columns `A:BD`.
 2. The app reads the first sheet from the uploaded workbook and uses it as raw input data.
-3. The calculation uses the local reference workbook `MB_Calc2_Apr 2026_auto.xlsx` for rates, output headers, and output formatting.
+3. The calculation, output headers, and output formatting are all applied from Python code.
 4. The app exports a clean output workbook with:
    - input columns `A:BD`
    - final output columns `CO:CW`
@@ -40,15 +40,7 @@ gunicorn --bind 0.0.0.0:$PORT wsgi:application
 
 This implementation computes the workbook in Python. The uploaded file does not need to contain sheets like `MAINCPF CPH DEP SEP END RBC CSR`, `DEP_BONUS CALC`, or `Rate Table`.
 
-Instead, the project keeps those rules in the local reference workbook:
-
-- `MAINCPF CPH DEP SEP END RBC CSR`
-- `Rate Table`
-- `DEP_BONUS CALC`
-- `SEP_BONUS CALC`
-- `END_BONUS CALC`
-- `RBC_BONUS CALC`
-- `CSR_BONUS CALC`
+The business rules and formatting are embedded in the Python codebase rather than loaded from another workbook at runtime.
 
 The app does not depend on Microsoft Excel.
 
@@ -57,7 +49,7 @@ The app does not depend on Microsoft Excel.
 - The uploaded workbook only needs one sheet. The processor reads the first sheet automatically.
 - Source columns `C:Y` remain visible in the downloaded workbook.
 - If the uploaded workbook has the `CO:CW` header cells removed or blanked, the app restores those output column names in the generated file.
-- The generated workbook copies the original sheet's formatting for the exported columns, including widths, fills, borders, alignment, row heights, and number formats.
+- The generated workbook applies the expected output formatting directly from Python, including widths, fills, borders, alignment, row heights, and number formats.
 
 ## Main-sheet formula map
 

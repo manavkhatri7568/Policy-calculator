@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import math
+import re
 import tempfile
 import uuid
 from dataclasses import dataclass
@@ -11,13 +12,13 @@ from pathlib import Path
 from typing import Any
 
 from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Protection, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.datetime import from_excel, to_excel
 
 
 BASE_DIR = Path(__file__).resolve().parent
 MAIN_SHEET = "MAINCPF CPH DEP SEP END RBC CSR"
-REFERENCE_WORKBOOK_PATH = BASE_DIR / "MB_Calc2_Apr 2026_auto.xlsx"
 INPUT_START_COL = 1  # A
 INPUT_END_COL = 56  # BD
 CALC_START_COL = 58  # BF
@@ -27,6 +28,26 @@ OUTPUT_END_COL = 101  # CW
 HEADER_ROWS = 2
 DATA_START_ROW = 3
 BLANK_STREAK_STOP = 200
+ACCRUED_INTEREST_DATE_SERIAL = float(to_excel(datetime(2026, 3, 31)))
+ACCRUED_INTEREST_RATE = 0.0825
+OUTPUT_HEADER_ROW1 = {
+    93: "Protiviti",
+    101: "x",
+}
+TEMPLATE_COLUMN_WIDTHS = {
+    1: 12.42578125, 2: 10.0, 3: 14.42578125, 4: 12.7109375, 5: 13.42578125, 6: 12.0,
+    7: 8.42578125, 8: 13.0, 9: 12.42578125, 10: 10.85546875, 11: 8.42578125,
+    12: 9.28515625, 13: 13.7109375, 14: 13.42578125, 15: 13.7109375, 16: 9.28515625,
+    17: 12.42578125, 18: 13.0, 19: 13.0, 20: 12.7109375, 21: 10.0, 22: 19.140625,
+    23: 13.0, 24: 14.0, 25: 10.140625, 26: 11.42578125, 27: 13.28515625,
+    28: 28.85546875, 29: 13.0, 30: 14.0, 31: 14.7109375, 32: 12.28515625,
+    33: 14.85546875, 34: 13.0, 35: 16.0, 36: 11.0, 37: 13.0, 38: 11.28515625,
+    39: 16.7109375, 40: 15.42578125, 41: 17.28515625, 42: 23.140625, 43: 27.0,
+    44: 21.140625, 45: 28.42578125, 46: 15.42578125, 47: 17.42578125, 48: 18.42578125,
+    49: 15.42578125, 50: 35.85546875, 51: 22.7109375, 52: 38.42578125,
+    53: 17.28515625, 54: 17.140625, 55: 13.0, 56: 13.0, 93: 14.140625, 94: 22.42578125,
+    95: 13.0, 96: 13.0, 97: 13.0, 98: 13.0, 99: 13.0, 100: 13.0, 101: 13.0,
+}
 OUTPUT_HEADER_ROW2 = {
     93: "LN_LA \nUpdated",
     94: "Guaranteed Addition",
@@ -37,6 +58,176 @@ OUTPUT_HEADER_ROW2 = {
     99: "Maturity Benefit",
     100: "Condition of 100.1% , additional bonus for CSR and END",
     101: "Total Maturity Benefit (inclusive of Rev. Bonus wherever applicable)",
+}
+CPF_CPH_OPTIONS = {
+    "SS": "(100%*BSA)+\nGA+GMA",
+    "PG": "(50%*BSA)\n+GA",
+    "PD": "(25%*BSA)\n+GA",
+    "CS": "(20%*BSA)+\nGA",
+}
+CSR_HIGH_SA_TABLE = [
+    (0.0, {10: 0.0, 13: 0.0, 16: 0.0, 19: 0.0, 22: 0.0}),
+    (250000.0, {10: 0.04, 13: 0.06, 16: 0.08, 19: 0.10, 22: 0.12}),
+    (500000.0, {10: 0.08, 13: 0.12, 16: 0.16, 19: 0.20, 22: 0.24}),
+]
+RBC_TERMINAL_BONUS_TABLE = {
+    10: {10: 0.176, 11: 0.2222, 12: 0.2796, 13: 0.3484, 14: 0.4312, 15: 0.5355},
+    11: {10: 0.0, 11: 0.2222, 12: 0.2796, 13: 0.3484, 14: 0.4312, 15: 0.5355},
+    12: {10: 0.0, 11: 0.0, 12: 0.2796, 13: 0.3484, 14: 0.4312, 15: 0.5355},
+}
+DEP_BONUS_RATES = {
+    1: 0.0, 2001: 0.0, 2002: 0.0, 2003: 0.0, 2004: 0.0, 2005: 0.0275, 2006: 0.03,
+    2007: 0.0275, 2008: 0.025, 2009: 0.02, 2010: 0.02, 2011: 0.02, 2012: 0.018,
+    2013: 0.018, 2014: 0.018, 2015: 0.018, 2016: 0.018, 2017: 0.018, 2018: 0.018,
+    2019: 0.018, 2020: 0.018, 2021: 0.018, 2022: 0.018, 2023: 0.018, 2024: 0.018,
+    2025: 0.018, 2026: 0.018,
+}
+SEP_BONUS_RATES = {
+    2001: 0.0, 2002: 0.03, 2003: 0.035, 2004: 0.03, 2005: 0.0275, 2006: 0.03,
+    2007: 0.03, 2008: 0.03, 2009: 0.026, 2010: 0.026, 2011: 0.026, 2012: 0.023,
+    2013: 0.023, 2014: 0.023, 2015: 0.021, 2016: 0.04, 2017: 0.04, 2018: 0.04,
+    2019: 0.04, 2020: 0.04, 2021: 0.04, 2022: 0.04, 2023: 0.04, 2024: 0.036,
+    2025: 0.034, 2026: 0.034,
+}
+END_BONUS_RATES = {
+    1: 0.0, 2001: 0.0, 2002: 0.0, 2003: 0.0, 2004: 0.0, 2005: 0.0, 2006: 0.0,
+    2007: 0.0, 2008: 0.0, 2009: 0.0, 2010: 0.0, 2011: 0.0, 2012: 0.0, 2013: 0.018,
+    2014: 0.0125, 2015: 0.018, 2016: 0.02, 2017: 0.02, 2018: 0.02, 2019: 0.02,
+    2020: 0.02, 2021: 0.02, 2022: 0.02, 2023: 0.02, 2024: 0.02, 2025: 0.02,
+    2026: 0.02,
+}
+RBC_BONUS_RATES = {
+    2001: 0.0, 2002: 0.0, 2003: 0.0, 2004: 0.0, 2005: 0.0, 2006: 0.0, 2007: 0.0,
+    2008: 0.0, 2009: 0.0, 2010: 0.0, 2011: 0.0, 2012: 0.0, 2013: 0.0, 2014: 0.0,
+    2015: 0.04, 2016: 0.055, 2017: 0.055, 2018: 0.055, 2019: 0.055, 2020: 0.055,
+    2021: 0.055, 2022: 0.055, 2023: 0.055, 2024: 0.055, 2025: 0.055, 2026: 0.055,
+}
+CSR_BONUS_RATES = {
+    2001: 0.0, 2002: 0.0, 2003: 0.0, 2004: 0.0, 2005: 0.0, 2006: 0.0, 2007: 0.0,
+    2008: 0.0, 2009: 0.0, 2010: 0.0, 2011: 0.0, 2012: 0.0, 2013: 0.0, 2014: 0.023,
+    2015: 0.021, 2016: 0.025, 2017: 0.025, 2018: 0.025, 2019: 0.03, 2020: 0.03,
+    2021: 0.03, 2022: 0.03, 2023: 0.03, 2024: 0.03, 2025: 0.03, 2026: 0.03,
+}
+THIN_SIDE = Side(style="thin", color="FF000000")
+THIN_BORDER = Border(left=THIN_SIDE, right=THIN_SIDE, top=THIN_SIDE, bottom=THIN_SIDE)
+STYLE_PRESETS = {
+    "plain": {
+        "font": Font(name="Aptos Narrow", size=11),
+        "fill": PatternFill(fill_type=None),
+        "border": Border(),
+        "alignment": Alignment(),
+        "number_format": "General",
+    },
+    "plain_bold": {
+        "font": Font(name="Aptos Narrow", size=11, bold=True),
+        "fill": PatternFill(fill_type=None),
+        "border": Border(),
+        "alignment": Alignment(),
+        "number_format": "General",
+    },
+    "plain_date": {
+        "font": Font(name="Aptos Narrow", size=11),
+        "fill": PatternFill(fill_type=None),
+        "border": Border(),
+        "alignment": Alignment(),
+        "number_format": "d-mmm-yy",
+    },
+    "plain_amount": {
+        "font": Font(name="Aptos Narrow", size=11),
+        "fill": PatternFill(fill_type=None),
+        "border": Border(),
+        "alignment": Alignment(),
+        "number_format": '_ * #,##0.00_ ;_ * \\-#,##0.00_ ;_ * "-"??_ ;_ @_ ',
+    },
+    "hdr": {
+        "font": Font(name="Aptos Narrow", size=11, bold=True),
+        "fill": PatternFill(fill_type=None),
+        "border": THIN_BORDER,
+        "alignment": Alignment(vertical="center"),
+        "number_format": "General",
+    },
+    "hdr_date": {
+        "font": Font(name="Aptos Narrow", size=11, bold=True),
+        "fill": PatternFill(fill_type=None),
+        "border": THIN_BORDER,
+        "alignment": Alignment(vertical="center"),
+        "number_format": "d-mmm-yy",
+    },
+    "hdr_yellow": {
+        "font": Font(name="Aptos Narrow", size=11, bold=True),
+        "fill": PatternFill(fill_type="solid", fgColor="FFFFFF00"),
+        "border": THIN_BORDER,
+        "alignment": Alignment(vertical="center"),
+        "number_format": "General",
+    },
+    "hdr_amount": {
+        "font": Font(name="Aptos Narrow", size=11, bold=True),
+        "fill": PatternFill(fill_type=None),
+        "border": THIN_BORDER,
+        "alignment": Alignment(vertical="center"),
+        "number_format": '_ * #,##0.00_ ;_ * \\-#,##0.00_ ;_ * "-"??_ ;_ @_ ',
+    },
+    "out_hdr_light": {
+        "font": Font(name="Aptos Narrow", size=11, bold=True),
+        "fill": PatternFill(fill_type="solid", fgColor="FFD9E2F3"),
+        "border": THIN_BORDER,
+        "alignment": Alignment(vertical="center", wrap_text=True),
+        "number_format": "General",
+    },
+    "out_hdr_teal": {
+        "font": Font(name="Aptos Narrow", size=11, bold=True),
+        "fill": PatternFill(fill_type="solid", fgColor="FF00B050"),
+        "border": THIN_BORDER,
+        "alignment": Alignment(vertical="center", wrap_text=True),
+        "number_format": "General",
+    },
+    "data": {
+        "font": Font(name="Aptos Narrow", size=11),
+        "fill": PatternFill(fill_type=None),
+        "border": THIN_BORDER,
+        "alignment": Alignment(),
+        "number_format": "General",
+    },
+    "data_green": {
+        "font": Font(name="Aptos Narrow", size=11),
+        "fill": PatternFill(fill_type="solid", fgColor="FF92D050"),
+        "border": THIN_BORDER,
+        "alignment": Alignment(),
+        "number_format": "General",
+    },
+    "data_date": {
+        "font": Font(name="Aptos Narrow", size=11),
+        "fill": PatternFill(fill_type=None),
+        "border": THIN_BORDER,
+        "alignment": Alignment(),
+        "number_format": "d-mmm-yy",
+    },
+    "data_amount": {
+        "font": Font(name="Aptos Narrow", size=11),
+        "fill": PatternFill(fill_type=None),
+        "border": THIN_BORDER,
+        "alignment": Alignment(),
+        "number_format": '_ * #,##0.00_ ;_ * \\-#,##0.00_ ;_ * "-"??_ ;_ @_ ',
+    },
+}
+HEADER_STYLE_BY_SOURCE_COL = {
+    1: "hdr", 2: "hdr", 3: "hdr", 4: "hdr", 5: "hdr", 6: "hdr", 7: "hdr", 8: "hdr",
+    9: "hdr", 10: "hdr", 11: "hdr", 12: "hdr", 13: "hdr_yellow", 14: "hdr_yellow",
+    15: "hdr_yellow", 16: "hdr", 17: "hdr", 18: "hdr", 19: "hdr", 20: "hdr", 21: "hdr",
+    22: "hdr_date", 23: "hdr_date", 24: "hdr", 25: "hdr", 26: "hdr", 27: "hdr",
+    28: "hdr", 29: "hdr", 30: "hdr", 31: "hdr", 32: "hdr_date", 33: "hdr_date",
+    34: "hdr_date", 35: "hdr_date", 36: "hdr_date", 37: "hdr_date", 38: "hdr",
+    39: "hdr", 40: "hdr", 41: "hdr", 42: "hdr", 43: "hdr", 44: "hdr", 45: "hdr",
+    46: "hdr_amount", 47: "hdr", 48: "hdr", 49: "hdr", 50: "hdr", 51: "hdr",
+    52: "hdr", 53: "hdr", 54: "hdr", 55: "hdr", 56: "hdr", 93: "out_hdr_light",
+    94: "out_hdr_teal", 95: "out_hdr_teal", 96: "out_hdr_teal", 97: "out_hdr_teal",
+    98: "out_hdr_teal", 99: "out_hdr_teal", 100: "out_hdr_teal", 101: "out_hdr_teal",
+}
+DATA_STYLE_BY_SOURCE_COL = {
+    1: "data_green", 22: "data_date", 32: "data_date", 33: "data_date", 34: "data_date",
+    35: "data_date", 36: "data_date", 46: "data_amount", 93: "data_amount",
+    94: "data_amount", 95: "data_amount", 96: "data_amount", 97: "data_amount",
+    98: "data_amount", 99: "data_amount", 100: "data_amount", 101: "data_amount",
 }
 
 
@@ -89,26 +280,14 @@ def process_uploaded_workbook(upload_path: Path, output_dir: Path) -> Processing
 
 
 def build_output_workbook(source_path: Path, output_path: Path) -> int:
-    if not REFERENCE_WORKBOOK_PATH.exists():
-        raise WorkbookProcessingError(
-            f"Reference workbook not found: {REFERENCE_WORKBOOK_PATH.name}"
-        )
-
     input_workbook = load_workbook(source_path, data_only=True, read_only=False)
-    reference_workbook = load_workbook(REFERENCE_WORKBOOK_PATH, data_only=True, read_only=False)
     try:
         input_ws = input_workbook[input_workbook.sheetnames[0]]
-        if MAIN_SHEET not in reference_workbook.sheetnames:
-            raise WorkbookProcessingError(
-                f"Reference workbook is missing required sheet: {MAIN_SHEET}"
-            )
-
-        reference_ws = reference_workbook[MAIN_SHEET]
-        config = extract_config(reference_workbook)
+        config = default_config()
 
         output_wb = Workbook()
         output_ws = output_wb.active
-        output_ws.title = reference_ws.title
+        output_ws.title = MAIN_SHEET
 
         # The uploaded workbook supplies only raw input A:BD. Layout, headers,
         # rates, and styling come from the local reference workbook.
@@ -125,7 +304,9 @@ def build_output_workbook(source_path: Path, output_path: Path) -> int:
                 value = (
                     row_values[source_col - 1]
                     if source_col <= INPUT_END_COL
-                    else reference_ws.cell(row=row_num, column=source_col).value
+                    else OUTPUT_HEADER_ROW1.get(source_col)
+                    if row_num == 1
+                    else OUTPUT_HEADER_ROW2.get(source_col)
                 )
                 output_ws.cell(row=row_num, column=output_col).value = value
 
@@ -147,13 +328,12 @@ def build_output_workbook(source_path: Path, output_path: Path) -> int:
                 output_ws.cell(row=source_row_num, column=output_col).value = value
             data_rows += 1
 
-        apply_output_formatting(reference_ws, output_ws, column_plan, rows[-1][0])
+        apply_output_formatting(output_ws, column_plan, rows[-1][0])
         output_ws.freeze_panes = "A3"
         output_wb.save(output_path)
         return data_rows
     finally:
         input_workbook.close()
-        reference_workbook.close()
 
 
 def iter_input_rows(source_ws):
@@ -175,71 +355,19 @@ def iter_input_rows(source_ws):
             if blank_streak >= BLANK_STREAK_STOP:
                 break
 
-
-def extract_config(workbook) -> WorkbookConfig:
-    main_ws = workbook[MAIN_SHEET]
-    rate_ws = workbook["Rate Table"]
-    dep_ws = workbook["DEP_BONUS CALC"]
-    sep_ws = workbook["SEP_BONUS CALC"]
-    end_ws = workbook["END_BONUS CALC"]
-    rbc_ws = workbook["RBC_BONUS CALC"]
-    csr_ws = workbook["CSR_BONUS CALC"]
-
-    # The rate table is the compact source of truth for payout options, CSR slabs,
-    # RBC terminal bonus percentages, and the year-wise bonus rates mirrored by the
-    # supporting bonus sheets.
-    cpf_cph_options = {
-        clean_text(rate_ws["B18"].value): rate_ws["C18"].value,
-        clean_text(rate_ws["B19"].value): rate_ws["C19"].value,
-        clean_text(rate_ws["B20"].value): rate_ws["C20"].value,
-        clean_text(rate_ws["B21"].value): rate_ws["C21"].value,
-    }
-
-    csr_high_sa_table = [
-        (
-            safe_num(rate_ws.cell(row, 1).value),
-            {
-                10: safe_num(rate_ws.cell(row, 2).value),
-                13: safe_num(rate_ws.cell(row, 3).value),
-                16: safe_num(rate_ws.cell(row, 4).value),
-                19: safe_num(rate_ws.cell(row, 5).value),
-                22: safe_num(rate_ws.cell(row, 6).value),
-            },
-        )
-        for row in (4, 5, 6)
-    ]
-
-    rbc_terminal_bonus_table: dict[int, dict[int, float]] = {}
-    for row in range(11, 14):
-        policy_term = int(safe_num(rate_ws.cell(row, 1).value))
-        rbc_terminal_bonus_table[policy_term] = {}
-        for year_col in range(2, 8):
-            policy_year = int(safe_num(rate_ws.cell(9, year_col).value))
-            rbc_terminal_bonus_table[policy_term][policy_year] = safe_num(
-                rate_ws.cell(row, year_col).value
-            )
-
+def default_config() -> WorkbookConfig:
     return WorkbookConfig(
-        accrued_interest_date_serial=date_serial(main_ws["BM1"].value),
-        accrued_interest_rate=safe_num(main_ws["BN1"].value),
-        cpf_cph_options=cpf_cph_options,
-        csr_high_sa_table=csr_high_sa_table,
-        rbc_terminal_bonus_table=rbc_terminal_bonus_table,
-        dep_bonus_rates=extract_year_rate_map(dep_ws, 1, 4),
-        sep_bonus_rates=extract_year_rate_map(sep_ws, 1, 4),
-        end_bonus_rates=extract_year_rate_map(end_ws, 1, 5),
-        rbc_bonus_rates=extract_year_rate_map(rbc_ws, 1, 4),
-        csr_bonus_rates=extract_year_rate_map(csr_ws, 1, 4),
+        accrued_interest_date_serial=ACCRUED_INTEREST_DATE_SERIAL,
+        accrued_interest_rate=ACCRUED_INTEREST_RATE,
+        cpf_cph_options=CPF_CPH_OPTIONS,
+        csr_high_sa_table=CSR_HIGH_SA_TABLE,
+        rbc_terminal_bonus_table=RBC_TERMINAL_BONUS_TABLE,
+        dep_bonus_rates=DEP_BONUS_RATES,
+        sep_bonus_rates=SEP_BONUS_RATES,
+        end_bonus_rates=END_BONUS_RATES,
+        rbc_bonus_rates=RBC_BONUS_RATES,
+        csr_bonus_rates=CSR_BONUS_RATES,
     )
-
-
-def extract_year_rate_map(ws, year_row: int, rate_row: int) -> dict[int, float]:
-    result: dict[int, float] = {}
-    for col in range(1, ws.max_column + 1):
-        year_value = ws.cell(year_row, col).value
-        if isinstance(year_value, (int, float)):
-            result[int(year_value)] = safe_num(ws.cell(rate_row, col).value)
-    return result
 
 
 def is_blank(value: Any) -> bool:
@@ -269,7 +397,14 @@ def num(value: Any) -> float:
         return float(to_excel(value))
     if isinstance(value, date):
         return float(to_excel(datetime(value.year, value.month, value.day)))
-    return float(str(value).strip())
+    raw = str(value).strip().replace("\u00a0", "")
+    if raw == "":
+        return 0.0
+    if raw.startswith("(") and raw.endswith(")"):
+        raw = f"-{raw[1:-1]}"
+    raw = raw.replace(",", "")
+    raw = raw.rstrip("%")
+    return float(raw)
 
 
 def safe_num(value: Any) -> float:
@@ -315,7 +450,19 @@ def excel_date(value: Any) -> datetime | None:
     raw = clean_text(value)
     if not raw:
         return None
-    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%m/%d/%Y"):
+    raw = raw.replace(".", "/")
+    raw = re.sub(r"\s+", " ", raw)
+    for fmt in (
+        "%Y-%m-%d",
+        "%d-%m-%Y",
+        "%d/%m/%Y",
+        "%m/%d/%Y",
+        "%d/%m/%y",
+        "%d/%m/%Y %H:%M:%S",
+        "%d-%m-%Y %H:%M:%S",
+        "%Y-%m-%d %H:%M:%S",
+        "%m/%d/%Y %H:%M:%S",
+    ):
         try:
             return datetime.strptime(raw, fmt)
         except ValueError:
@@ -685,34 +832,56 @@ def apply_fallback_headers(output_ws, column_plan: list[int]) -> None:
             output_ws.cell(2, output_col).value = OUTPUT_HEADER_ROW2[source_col]
 
 
-def apply_output_formatting(source_ws, output_ws, column_plan: list[int], last_row: int) -> None:
-    # Copy visual formatting from the original sheet so the reduced workbook keeps
-    # the familiar widths, fills, borders, alignments, and print setup.
+def apply_output_formatting(output_ws, column_plan: list[int], last_row: int) -> None:
+    # Apply the template layout from Python constants so runtime processing has no
+    # workbook dependency while preserving the same visual output.
     for output_col, source_col in enumerate(column_plan, start=1):
-        source_letter = get_column_letter(source_col)
         target_letter = get_column_letter(output_col)
-        source_dim = source_ws.column_dimensions[source_letter]
-        if source_dim.width is not None:
-            output_ws.column_dimensions[target_letter].width = source_dim.width
+        output_ws.column_dimensions[target_letter].width = TEMPLATE_COLUMN_WIDTHS.get(source_col, 13.0)
 
-    for row_num in range(1, last_row + 1):
-        source_row_dim = source_ws.row_dimensions[row_num]
-        if source_row_dim.height is not None:
-            output_ws.row_dimensions[row_num].height = source_row_dim.height
+    output_ws.row_dimensions[2].height = 75.0
 
     for row_num in range(1, last_row + 1):
         for output_col, source_col in enumerate(column_plan, start=1):
-            source_cell = source_ws.cell(row=row_num, column=source_col)
             target_cell = output_ws.cell(row=row_num, column=output_col)
-            copy_cell_style(source_cell, target_cell)
+            if row_num == 1:
+                style_name = row1_style_name(source_col)
+            elif row_num == 2:
+                style_name = HEADER_STYLE_BY_SOURCE_COL.get(source_col, "hdr")
+            else:
+                style_name = DATA_STYLE_BY_SOURCE_COL.get(source_col, "data")
+            apply_style_preset(target_cell, style_name)
 
-    output_ws.sheet_view.showGridLines = source_ws.sheet_view.showGridLines
-    output_ws.sheet_format.defaultColWidth = source_ws.sheet_format.defaultColWidth
-    output_ws.sheet_format.defaultRowHeight = source_ws.sheet_format.defaultRowHeight
-    output_ws.sheet_format.baseColWidth = source_ws.sheet_format.baseColWidth
-    output_ws.page_margins = copy.copy(source_ws.parent[MAIN_SHEET].page_margins)
-    output_ws.page_setup = copy.copy(source_ws.parent[MAIN_SHEET].page_setup)
-    output_ws.print_options = copy.copy(source_ws.parent[MAIN_SHEET].print_options)
+    output_ws.sheet_format.defaultRowHeight = 15.0
+    output_ws.sheet_format.baseColWidth = 8
+    output_ws.page_margins.left = 0.7
+    output_ws.page_margins.right = 0.7
+    output_ws.page_margins.top = 0.75
+    output_ws.page_margins.bottom = 0.75
+    output_ws.page_margins.header = 0.3
+    output_ws.page_margins.footer = 0.3
+    output_ws.page_setup.orientation = "portrait"
+    output_ws.page_setup.paperSize = 9
+
+
+def row1_style_name(source_col: int) -> str:
+    if source_col == 93:
+        return "plain_bold"
+    if source_col == 34:
+        return "plain_date"
+    if source_col == 46:
+        return "plain_amount"
+    return "plain"
+
+
+def apply_style_preset(target_cell, style_name: str) -> None:
+    preset = STYLE_PRESETS[style_name]
+    target_cell.font = copy.copy(preset["font"])
+    target_cell.fill = copy.copy(preset["fill"])
+    target_cell.border = copy.copy(preset["border"])
+    target_cell.alignment = copy.copy(preset["alignment"])
+    target_cell.protection = copy.copy(Protection(locked=True, hidden=False))
+    target_cell.number_format = preset["number_format"]
 
 
 def copy_cell_style(source_cell, target_cell) -> None:
